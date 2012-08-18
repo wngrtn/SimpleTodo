@@ -1,0 +1,4 @@
+[
+	{ "keys": [",", "o", "p"], "command": "reorder_todos_by_project"},
+	{ "keys": [",", "o", "c"], "command": "reorder_todos_by_context"}
+]

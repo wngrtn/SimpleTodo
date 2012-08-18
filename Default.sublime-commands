@@ -1,0 +1,10 @@
+[
+	{
+		"caption": "Todos: Reorder By Project",
+		"command": "reorder_todos_by_project"
+	},
+	{
+		"caption": "Todos: Reoder By Context",
+		"command": "reorder_todos_by_context"
+	}
+]
