@@ -1,6 +1,8 @@
 import sublime
 import sublime_plugin
 
+s_archive_separator = '-' * 30 + ' archive ' + '-' * 30
+
 
 # ------------------------------------------------------------------------
 # Helper Functions for dealing with dicts of lists
@@ -11,6 +13,14 @@ def AddItemToPile(item, pile, data):
         data[pile].append(item)
     else:
         data[pile] = [item]
+    return data
+
+
+def RemoveItemFromPile(item, pile, data):
+    '''Removes an item from a pile (a list in a dict)'''
+    data[pile].remove(item)
+    if not data[pile]:
+        del data[pile]
     return data
 
 
@@ -77,6 +87,21 @@ def FormatTag(tag, kind, target='header'):
     return prefix[kind] + new_tag
 
 
+def DetermineSortMode(s):
+    mode = None
+    count = -1
+    lines = s.split('\n')
+    while mode is None:
+        count += 1
+        if lines[count].startswith('# @'):
+            mode = 'context'
+        elif lines[count].startswith('# '):
+            mode = 'project'
+        else:
+            pass
+    return mode
+
+
 def ParseTodoLine(line, mode, current_head):
     '''Parse a single line from a todo file into a list'''
 
@@ -96,6 +121,7 @@ def ParseTodoLine(line, mode, current_head):
     else:
         proj = []
         cont = []
+        done = False
 
         # save header info
         if current_head != '':
@@ -103,6 +129,10 @@ def ParseTodoLine(line, mode, current_head):
                 proj.append(FormatTag(current_head, 'project', 'tag'))
             else:
                 cont.append(FormatTag(current_head, 'context', 'tag'))
+
+        # save done status info
+        if line.startswith('x '):
+            done = True
 
         # save tag info
         for word in line.split(' '):
@@ -119,19 +149,19 @@ def ParseTodoLine(line, mode, current_head):
         proj.sort()
         cont.sort()
 
-        item = RemoveTags(line), proj, cont
+        item = RemoveTags(line), proj, cont, done
 
     return item, mode, current_head
 
 
-def ParseTodoList(d):
-    '''Parse a todolist into a list of dicts of strings and lists'''
+def ParseTodoBlock(b):
+    '''Parse a todo block into a dict of dicts of strings and lists'''
 
     # parse lines into touples
     items = []
     current_head = ''
     mode = 0  # 0 if headings are projects, 1 if headings are contexts
-    for line in d.split('\n'):
+    for line in b.split('\n'):
         item, mode, current_head = ParseTodoLine(line, mode, current_head)
         if item is not None:
             items.append(item)
@@ -140,12 +170,14 @@ def ParseTodoList(d):
     fulltexts = {}
     contexts = {}
     projects = {}
+    donemarks = {}
     count = 0
     seen = []
-    for full, proj, cont in items:
-        toup = full, proj, cont
+    for full, proj, cont, done in items:
+        toup = full, proj, cont, done
         if toup not in seen:
             fulltexts[count] = full
+            donemarks[count] = done
             if proj == []:
                 AddItemToPile(count, 0, projects)
             else:
@@ -156,32 +188,71 @@ def ParseTodoList(d):
             else:
                 for con in cont:
                     AddItemToPile(count, con, contexts)
+
             seen.append(toup)
         count += 1
 
-    return {'fulltexts': fulltexts, 'projects': projects, 'contexts': contexts}
+    return {'fulltexts': fulltexts, 'projects': projects, 'contexts': contexts, 'donemarks': donemarks}
+
+
+def ParseTodoList(d):
+    '''Parse a todolist into a list of dicts of dicts of strings and lists'''
+
+    blocks = []
+    for block in d.split(s_archive_separator):
+        blocks.append(ParseTodoBlock(block))
+
+    return blocks
+
+
+def ArchiveItems(d):
+    '''Move done items to archive block'''
+
+    # determine highest archive id in archive block
+    archive_keys = d[1]['fulltexts'].keys()
+    archive_id = 0
+    if archive_keys:
+        archive_id = max(archive_keys)
+
+    # remove done items from main block and attach to archive block
+    for main_id, done in d[0]['donemarks'].items():
+        if done == True:
+            archive_id += 1
+            for key in ['donemarks', 'fulltexts']:
+                d[1][key][archive_id] = d[0][key].pop(main_id)
+            for key in ['projects', 'contexts']:
+                for tag in AllPilesContainingItem(main_id, d[0][key]):
+                    RemoveItemFromPile(main_id, tag, d[0][key])
+                    AddItemToPile(archive_id, tag, d[1][key])
+
+    return d
 
 
 def FormatTodoList(d, mode='project'):
     '''Print todolist from parsed data'''
 
     s = ''
-    if mode == 'project':
-        head = d['projects']
-    elif mode == 'context':
-        head = d['contexts']
 
-    for current_head, todos in sorted(head.items()):
-        if current_head != 0:
-            s += "# {0}\n".format(FormatTag(current_head, mode, 'header'))
-        for todo in sorted(todos):
-            tags = AllPilesContainingItem(todo, d['projects'])
-            tags += AllPilesContainingItem(todo, d['contexts'])
-            tags.remove(current_head)
-            if 0 in tags:
-                tags.remove(0)
-            s += d['fulltexts'][todo].strip() + ' ' + ' '.join(tags) + '\n'
-        s += "\n"
+    for i, block in enumerate(d):
+        if mode == 'project':
+            head = block['projects']
+        elif mode == 'context':
+            head = block['contexts']
+
+        if i == 1:
+            s += s_archive_separator + '\n' * 2
+
+        for current_head, todos in sorted(head.items()):
+            if current_head != 0:
+                s += "# {0}\n".format(FormatTag(current_head, mode, 'header'))
+            for todo in sorted(todos):
+                tags = AllPilesContainingItem(todo, block['projects'])
+                tags += AllPilesContainingItem(todo, block['contexts'])
+                tags.remove(current_head)
+                if 0 in tags:
+                    tags.remove(0)
+                s += block['fulltexts'][todo].strip() + ' ' + ' '.join(tags) + '\n'
+            s += "\n"
 
     return s.strip("\n")
 
@@ -204,4 +275,15 @@ class ReorderTodosByContextCommand(sublime_plugin.TextCommand):
         body = self.view.substr(total)
         parsed = ParseTodoList(body)
         formatted = FormatTodoList(parsed, 'context')
+        self.view.replace(edit, total, formatted)
+
+
+class ArchiveCompletedTodosCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        total = sublime.Region(0, self.view.size())
+        body = self.view.substr(total)
+        parsed = ParseTodoList(body)
+        mode = DetermineSortMode(body)
+        parsed = ArchiveItems(parsed)
+        formatted = FormatTodoList(parsed, mode)
         self.view.replace(edit, total, formatted)

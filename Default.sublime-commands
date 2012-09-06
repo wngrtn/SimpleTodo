@@ -6,5 +6,9 @@
 	{
 		"caption": "Todos: Reoder By Context",
 		"command": "reorder_todos_by_context"
+	},
+	{
+		"caption": "Todos: Archive Completed",
+		"command": "archive_completed_todos"
 	}
 ]
