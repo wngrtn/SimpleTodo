@@ -4,8 +4,16 @@
 		"command": "reorder_todos_by_project"
 	},
 	{
+		"caption": "Todos: Reoder By Project And Context",
+		"command": "reorder_todos_by_project_and_context"
+	},
+	{
 		"caption": "Todos: Reoder By Context",
 		"command": "reorder_todos_by_context"
+	},
+	{
+		"caption": "Todos: Reoder By Context And Project",
+		"command": "reorder_todos_by_context_and_project"
 	},
 	{
 		"caption": "Todos: Archive Completed",

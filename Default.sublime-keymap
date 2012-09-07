@@ -1,5 +1,7 @@
 [
 	{ "keys": [",", "o", "p"], "command": "reorder_todos_by_project"},
+	{ "keys": [",", "o", "o"], "command": "reorder_todos_by_project_and_context"},
 	{ "keys": [",", "o", "c"], "command": "reorder_todos_by_context"},
+	{ "keys": [",", "o", "x"], "command": "reorder_todos_by_context_and_project"},
 	{ "keys": [",", "o", "a"], "command": "archive_completed_todos"}
 ]

@@ -102,7 +102,7 @@ def DetermineSortMode(s):
     return mode
 
 
-def ParseTodoLine(line, mode, current_head):
+def ParseTodoLine(line, heads):
     '''Parse a single line from a todo file into a list'''
 
     if line == '':
@@ -110,13 +110,25 @@ def ParseTodoLine(line, mode, current_head):
 
     elif line.startswith('# @'):
         item = None
-        mode = 1
-        current_head = line[2:]
+        heads[0]['name'] = line[2:]
+        heads[0]['kind'] = 'context'
+        heads[1]['name'] = None
 
     elif line.startswith('# '):
         item = None
-        mode = 0
-        current_head = line[2:]
+        heads[0]['name'] = line[2:]
+        heads[0]['kind'] = 'project'
+        heads[1]['name'] = None
+
+    elif line.startswith('## @'):
+        item = None
+        heads[1]['name'] = line[3:]
+        heads[1]['kind'] = 'context'
+
+    elif line.startswith('## '):
+        item = None
+        heads[1]['name'] = line[3:]
+        heads[1]['kind'] = 'project'
 
     else:
         proj = []
@@ -124,11 +136,12 @@ def ParseTodoLine(line, mode, current_head):
         done = False
 
         # save header info
-        if current_head != '':
-            if mode == 0:
-                proj.append(FormatTag(current_head, 'project', 'tag'))
-            else:
-                cont.append(FormatTag(current_head, 'context', 'tag'))
+        for head in heads:
+            if head['name'] != None and head['name'] != '':
+                if head['kind'] == 'project':
+                    proj.append(FormatTag(head['name'], 'project', 'tag'))
+                elif head['kind'] == 'context':
+                    cont.append(FormatTag(head['name'], 'context', 'tag'))
 
         # save done status info
         if line.startswith('x '):
@@ -151,7 +164,7 @@ def ParseTodoLine(line, mode, current_head):
 
         item = RemoveTags(line), proj, cont, done
 
-    return item, mode, current_head
+    return item, heads
 
 
 def ParseTodoBlock(b):
@@ -159,10 +172,9 @@ def ParseTodoBlock(b):
 
     # parse lines into touples
     items = []
-    current_head = ''
-    mode = 0  # 0 if headings are projects, 1 if headings are contexts
+    heads = [{'name': None, 'kind': None}, {'name': None, 'kind': None}]
     for line in b.split('\n'):
-        item, mode, current_head = ParseTodoLine(line, mode, current_head)
+        item, heads = ParseTodoLine(line, heads)
         if item is not None:
             items.append(item)
 
@@ -228,32 +240,53 @@ def ArchiveItems(d):
     return d
 
 
-def FormatTodoList(d, mode='project'):
+def FormatTodoLine(todo, b, excludes=[]):
+        tags = set(AllPilesContainingItem(todo, b['projects']))
+        tags |= set(AllPilesContainingItem(todo, b['contexts']))
+        tags -= set(excludes)
+        if 0 in tags:
+            tags.remove(0)
+        return b['fulltexts'][todo].strip() + ' ' + ' '.join(tags) + '\n'
+
+
+def FormatTodoBlock(b, mode='project', levels=1):
     '''Print todolist from parsed data'''
 
+    possible_head_names = ['projects', 'contexts']
+
+    # determine heads
+    head_names = [mode + 's']
+    if levels == 2:
+        possible_head_names.remove(mode + 's')
+        head_names.append(possible_head_names[0])
+
     s = ''
+    for head, todos in sorted(b[head_names[0]].items()):
+        if head != 0:
+            s += "# {0}\n".format(FormatTag(head, mode, 'header'))
+        if levels == 1:
+            for todo in sorted(todos):
+                s += FormatTodoLine(todo, b, [head])
+        elif levels == 2:
+            for subhead, subhead_todos in sorted(b[head_names[1]].items()):
+                overlap = set(todos) & set(subhead_todos)
+                if overlap:
+                    if subhead != 0:
+                        s += "## {0}\n".format(FormatTag(subhead, head_names[1][:-1], 'header'))
+                    for todo in sorted(overlap):
+                        s += FormatTodoLine(todo, b, [head, subhead])
+        s += "\n"
 
+    return s
+
+
+def FormatTodoList(d, mode='project', levels=1):
+    '''Print todolist from parsed data'''
+    s = ''
     for i, block in enumerate(d):
-        if mode == 'project':
-            head = block['projects']
-        elif mode == 'context':
-            head = block['contexts']
-
         if i == 1:
             s += s_archive_separator + '\n' * 2
-
-        for current_head, todos in sorted(head.items()):
-            if current_head != 0:
-                s += "# {0}\n".format(FormatTag(current_head, mode, 'header'))
-            for todo in sorted(todos):
-                tags = AllPilesContainingItem(todo, block['projects'])
-                tags += AllPilesContainingItem(todo, block['contexts'])
-                tags.remove(current_head)
-                if 0 in tags:
-                    tags.remove(0)
-                s += block['fulltexts'][todo].strip() + ' ' + ' '.join(tags) + '\n'
-            s += "\n"
-
+        s += FormatTodoBlock(block, mode, levels)
     return s.strip("\n")
 
 
@@ -265,7 +298,16 @@ class ReorderTodosByProjectCommand(sublime_plugin.TextCommand):
         total = sublime.Region(0, self.view.size())
         body = self.view.substr(total)
         parsed = ParseTodoList(body)
-        formatted = FormatTodoList(parsed, 'project')
+        formatted = FormatTodoList(parsed, 'project', 1)
+        self.view.replace(edit, total, formatted)
+
+
+class ReorderTodosByProjectAndContextCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        total = sublime.Region(0, self.view.size())
+        body = self.view.substr(total)
+        parsed = ParseTodoList(body)
+        formatted = FormatTodoList(parsed, 'project', 2)
         self.view.replace(edit, total, formatted)
 
 
@@ -274,7 +316,16 @@ class ReorderTodosByContextCommand(sublime_plugin.TextCommand):
         total = sublime.Region(0, self.view.size())
         body = self.view.substr(total)
         parsed = ParseTodoList(body)
-        formatted = FormatTodoList(parsed, 'context')
+        formatted = FormatTodoList(parsed, 'context', 1)
+        self.view.replace(edit, total, formatted)
+
+
+class ReorderTodosByContextAndProjectCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        total = sublime.Region(0, self.view.size())
+        body = self.view.substr(total)
+        parsed = ParseTodoList(body)
+        formatted = FormatTodoList(parsed, 'context', 2)
         self.view.replace(edit, total, formatted)
 
 

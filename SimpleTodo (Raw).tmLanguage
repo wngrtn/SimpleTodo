@@ -13,7 +13,13 @@
 	<array>
 		<dict>
 			<key>match</key>
-			<string>^# .*</string>
+			<string>^#{1,2} [^@]+</string>
+			<key>name</key>
+			<string>markup.heading.markdown</string>
+		</dict>
+		<dict>
+			<key>match</key>
+			<string>\.\w+(?=\b)</string>
 			<key>name</key>
 			<string>markup.heading.markdown</string>
 		</dict>
@@ -25,7 +31,13 @@
 		</dict>
 		<dict>
 			<key>match</key>
-			<string>[@\.]\w+(?=\b)</string>
+			<string>[@]\w+(?=\b)</string>
+			<key>name</key>
+			<string>entity.other.attribute-name</string>
+		</dict>
+		<dict>
+			<key>match</key>
+			<string>^#{1,2} @.+</string>
 			<key>name</key>
 			<string>entity.other.attribute-name</string>
 		</dict>
