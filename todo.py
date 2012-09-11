@@ -246,7 +246,8 @@ def FormatTodoLine(todo, b, excludes=[]):
         tags -= set(excludes)
         if 0 in tags:
             tags.remove(0)
-        return b['fulltexts'][todo].strip() + ' ' + ' '.join(tags) + '\n'
+        all_words = [b['fulltexts'][todo].strip()] + list(tags)
+        return ' '.join(all_words) + '\n'
 
 
 def FormatTodoBlock(b, mode='project', levels=1):
